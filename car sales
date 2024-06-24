@@ -1,0 +1,105 @@
+# 일별 매출액
+select A.orderdate, sum(quantityOrdered*priceEach) as sales
+from classicmodels.orders A left join classicmodels.orderdetails B
+on A.ordernumber=B.ordernumber
+group by A.orderdate order by A.orderdate;
+
+# 월별 매출액
+select substr(A.orderdate,1,7) as MM, sum(quantityOrdered*priceEach) as sales
+from classicmodels.orders A left join classicmodels.orderdetails B
+on A.ordernumber=B.ordernumber
+group by 1 order by 1;
+
+# 연도별 매출액
+select substr(A.orderdate,1,4) YY, sum(quantityordered*priceeach) as sales
+from classicmodels.orders A left join classicmodels.orderdetails B
+on A.ordernumber=B.ordernumber group by 1 order by 1;
+
+# 일별 구매자 수, 구매 건수
+# 중복 확인
+select count(ordernumber) N_orders,count(distinct(ordernumber)) N_orders_distinct from classicmodels.orders; # 중복 없음
+select count(customernumber) N_purchaser, count(distinct(customernumber)) N_purchaser_distinct from classicmodels.orders; # 중복 있음
+
+select orderdate, count(customernumber), count(ordernumber) from classicmodels.orders group by 1 order by 1;
+
+# 월별 구매자 수, 구매 건수
+select substr(orderdate,1,7) MM,count(distinct(customernumber)) N_purchaser,count(ordernumber) N_orders from classicmodels.orders
+group by 1 order by 1; # 구매자 수는 중복 있어서 distinct 사용
+
+# 연도별 구매자 수, 구매 건수
+select substr(orderdate,1,4) YY,count(distinct(customernumber)) N_purchaser,count(ordernumber) N_orders from classicmodels.orders
+group by 1 order by 1; # 구매자 수는 중복 있어서 distinct 사용
+
+# 인당 매출액(연도별)
+select substr(A.orderdate,1,4) YY, sum(quantityordered*priceeach)/count(distinct(C.customernumber)) each_sales 
+from classicmodels.orders A left join classicmodels.orderdetails B 
+on A.orderNumber=B.orderNumber left join classicmodels.customers C 
+on A.customerNumber=C.customerNumber group by 1 order by 1;
+
+# 건당 구매 금액(연도별) (ATV, average transaction value)
+select substr(A.orderdate,1,4) YY, sum(quantityordered*priceeach)/count(distinct(B.ordernumber)) as ATV
+from classicmodels.orders A left join classicmodels.orderdetails B 
+on A.orderNumber=B.orderNumber group by 1 order by 1;
+
+# 국가별, 도시별 매출액
+select C.country, c.city,sum(quantityordered*priceeach) as sale from classicmodels.orders A left join classicmodels.orderdetails B
+on A.orderNumber=B.orderNumber left join classicmodels.customers C
+on A.customerNumber=C.customerNumber group by 1,2 order by 1,2;
+
+# 북미 vs 비북미 매출액
+select case when country in ('USA','Canada') then 'North America' else 'Others' end country_grp, sum(quantityordered*priceeach) as sale
+from classicmodels.orders A left join classicmodels.orderdetails B
+on A.orderNumber=B.orderNumber left join classicmodels.customers C
+on A.customerNumber=C.customerNumber group by 1 order by 2 desc;
+
+# 매출 top 5 국가 매출
+# 국가별 매출 테이블 만들기
+create table classicmodels.stat as
+select country, sum(quantityordered*priceeach) as sale from classicmodels.orders A left join classicmodels.customers B
+on A.customerNumber=B.customerNumber left join classicmodels.orderdetails C on A.orderNumber=C.orderNumber group by 1 order by 2 desc;
+
+# 상위 5위 구하기 (테이블 2개 만들어 구하기)
+create table classicmodels.stat_rank as
+select country, sale, dense_rank() over(order by sale desc)  rnk from classicmodels.stat;
+
+select * from classicmodels.stat_rank where rnk between 1 and 5;
+
+# 상위 5위 구하기 (서브쿼리 사용하기)
+select * from ( select country, sales, dense_rank() over (order by sales desc) rnk
+from (select c.country, sum(quantityordered*priceeach) sales from classicmodels.orders A left join classicmodels.orderdetails B
+on A.orderNumber=B.orderNumber left join classicmodels.customers C
+on A.customerNumber=C.customerNumber group by 1) A)A where rnk<=5;
+
+# 재구매율
+select C.country, substr(A.orderdate,1,4) YY, count(distinct A.customernumber) BU_1, count(distinct B.customernumber) BU_2,
+count(distinct B.customernumber)/count(distinct A.customernumber) retention_rate
+from classicmodels.orders A left join classicmodels.orders B
+on A.customerNumber=B.customerNumber and substr(A.orderdate,1,4)=substr(B.orderdate,1,4)-1
+left join classicmodels.customers C on A.customerNumber=C.customerNumber  group by 1,2 having BU_1>=8 order by 5 desc ;
+
+# 이탈률 구하기
+select max(orderdate) mx_order from classicmodels.orders;
+select customernumber,mx_order,datediff('2005-06-01',mx_order) diff
+from (select customernumber,max(orderdate) mx_order from classicmodels.orders group by 1) base;
+
+create table classicmodels.churn_list as
+select *, case when diff>=90 then 'CHURN' else 'NON-CHURN' end churn_type from (
+select customernumber,mx_order,datediff('2005-06-01',mx_order) diff
+from (select customernumber,max(orderdate) mx_order from classicmodels.orders group by 1) base) base;
+
+select case when diff>=90 then 'CHURN' else 'NON-CHURN' end churn_type  , count(customernumber) N_cus from (
+select customernumber,mx_order,datediff('2005-06-01',mx_order) diff
+from (select customernumber,max(orderdate) mx_order from classicmodels.orders group by 1) base) base group by 1;
+
+select churn_type, C.productline, count(distinct A.customerNumber) Bu from classicmodels.orders A left join classicmodels.orderdetails B
+on A.orderNumber=B.orderNumber left join classicmodels.products C on B.productCode=C.productCode left join classicmodels.churn_list D
+on A.customerNumber=D.customerNumber group by 1,2 order by 1,3 desc;
+
+select * from classicmodels.churn_list;
+
+# 이탈률 데이터 분석을 위한 데이터 합치기
+select distinct * from classicmodels.orders A left join classicmodels.customers B on A.customernumber=B.customernumber 
+left join classicmodels.payments C on A.customernumber=C.customernumber
+left join classicmodels.orderdetails D on A.ordernumber=D.ordernumber
+left join classicmodels.products E on D.productCode=E.productcode
+left join classicmodels.churn_list L on A.customernumber=L.customernumber; 
