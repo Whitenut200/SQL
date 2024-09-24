@@ -1,0 +1,99 @@
+# DIVISION NAME 별 평균 평점
+select `Division Name` , avg(rating) from newdata.womens_data
+group by 1 order by 2 desc;
+
+# DEPARTMENT NAME별 평균 평점
+select `Department Name` , avg(rating) from newdata.womens_data
+group by 1 order by 2 desc; # Trend가 현저히 낮은 평점
+
+# TREND의 평점 3점 이하 리뷰
+select * from newdata.womens_data
+where `Department Name`='Trend' and Rating<=3;
+
+# TREND의 평점 3점 이하 연령 분포
+select floor(age/10)*10 ageband, count(*) cnt from newdata.womens_data
+where `Department Name`='Trend' and Rating<=3
+group by 1 order by 2 desc;
+
+# DEPARTMENT별 연령별 리뷰수
+select floor(age/10)*10 ageband, count(*) cnt from newdata.womens_data
+where `Department Name`='Trend' group by 1 order by 2 desc; # 50대의 수가 많이 않음 -> 50대의 평점이 낮음
+
+# 50대 3점 이하 trend 리뷰
+select * from newdata.womens_data where `Department Name`='Trend' and Rating<=3 and age between 50 and 59 limit 10; # 10행까지
+
+# DEPATMENT, CLOTHING 별 평균 평점
+select `Department Name`,`Clothing ID`, avg(rating) from newdata.womens_data
+group by 1,2;
+
+# DEPATMENT별 평점 순위
+select *, row_number() over(partition by `Department Name` order by AVG_RATING) RNK
+from (select `Department Name`, `Clothing ID`, avg(rating) AVG_RATING from newdata.womens_data group by 1 ,2 ) A;
+
+# 1~10위 데이터 조회
+select * from (select *, row_number() over(partition by `Department Name` order by AVG_RATING) RNK
+from (select `Department Name`, `Clothing ID`, avg(rating) AVG_RATING from  newdata.womens_data group by 1 ,2 ) A)A 
+where RNK<=10;
+
+# DEPATMENT별 평점 낮은 순위 10개
+create temporary table newdata.STAT as
+select * from (select *, row_number() over(partition by `Department Name` order by AVG_RATING) RNK
+from (select `Department Name`, `Clothing ID`, avg(rating) AVG_RATING from  newdata.womens_data group by 1 ,2 ) A)A 
+where RNK<=10;
+
+# bottom의 평점 낮은 clothing id
+select `Clothing ID`,`Department Name` from newdata.STAT
+where `Department Name`='Bottoms';
+
+# 위의 clothing id 리뷰평
+select * from newdata.womens_data
+where `Clothing ID` IN (select `Clothing ID` from newdata.STAT where `Department Name`='Bottoms') AND rating <=3;
+
+# 연령별로 낮은 점수를 준 department에 할인쿠폰 발급
+# 연령별 department별 가장 낮은 점수계산
+select `Department Name`, floor(age/10)*10 AGEbox, avg(rating) AVG_RATING from  newdata.womens_data group by 1,2 order by 3 ;
+
+# rank 생성
+select *, row_number() over(partition by AGEbox order by AVG_RATING) RNK
+from (select `Department Name`, floor(age/10)*10 AGEbox, avg(rating) AVG_RATING from  newdata.womens_data group by 1,2) A;
+
+# rank 1인 department 추출
+select * from (select * , row_number() over(partition by A.AGEbox order by AVGB) RNK from(
+SELECT `Department Name`, floor(age/10)*10 AGEbox, avg(rating) AVGB from  newdata.womens_data group by 1,2)A)B where RNK=1;
+
+# 상품평에 size 포함된 리뷰수
+select `Review Text`, case when `Review Text` like '%SIZE%' then 1 else 0 end SIZE_YN from newdata.womens_data;
+select *, (N_SIZE/N_TOTAL), round((N_SIZE/N_TOTAL)*100,1) percent from (select sum(case when `Review Text` like '%SIZE%' then 1 else 0 end) N_SIZE, count(*) N_TOTAL from newdata.womens_data)A ;
+
+# size 디테일
+select sum(case when `Review Text` like '%SIZE%' then 1 else 0 end) N_SIZE,
+sum(case when `Review Text` like '%LARGE%' then 1 else 0 end) N_LARGE,
+sum(case when `Review Text` like '%LOOSE%' then 1 else 0 end) N_LOOSE,
+sum(case when `Review Text` like '%SMALL%' then 1 else 0 end) N_SMALL,
+sum(case when `Review Text` like '%TIGHT%' then 1 else 0 end) N_TIGHT,
+count(*) N_TOTAL from newdata.womens_data ;
+
+# department별 size 디테일
+select `Department Name`, sum(case when `Review Text` like '%SIZE%' then 1 else 0 end) N_SIZE,
+sum(case when `Review Text` like '%LARGE%' then 1 else 0 end) N_LARGE,
+sum(case when `Review Text` like '%LOOSE%' then 1 else 0 end) N_LOOSE,
+sum(case when `Review Text` like '%SMALL%' then 1 else 0 end) N_SMALL,
+sum(case when `Review Text` like '%TIGHT%' then 1 else 0 end) N_TIGHT,
+count(*) N_TOTAL from newdata.womens_data group by 1 ;   # DRESSES, BOTTOMS, TOPS 가 size 컨플레인이 많음
+
+# 비율로 표현
+select Floor(age/10)*10 AGEBAND,`Department Name`, sum(case when `Review Text` like '%SIZE%' then 1 else 0 end)/sum(1) N_SIZE,
+sum(case when `Review Text` like '%LARGE%' then 1 else 0 end)/sum(1) N_LARGE,
+sum(case when `Review Text` like '%LOOSE%' then 1 else 0 end)/sum(1) N_LOOSE,
+sum(case when `Review Text` like '%SMALL%' then 1 else 0 end)/sum(1) N_SMALL,
+sum(case when `Review Text` like '%TIGHT%' then 1 else 0 end)/sum(1) N_TIGHT,
+count(*) N_TOTAL from newdata.womens_data group by 1,2 order by 1,2 ; 
+
+
+# clothing별 size 디테일
+select `Clothing ID`, sum(case when `Review Text` like '%SIZE%' then 1 else 0 end) N_SIZE,
+sum(case when `Review Text` like '%LARGE%' then 1 else 0 end) N_LARGE,
+sum(case when `Review Text` like '%LOOSE%' then 1 else 0 end) N_LOOSE,
+sum(case when `Review Text` like '%SMALL%' then 1 else 0 end) N_SMALL,
+sum(case when `Review Text` like '%TIGHT%' then 1 else 0 end) N_TIGHT,
+count(*) N_TOTAL from newdata.womens_data group by 1 order by 2 desc; # size에 관한 컨플레인이 많은 순서를 볼 수 있다
